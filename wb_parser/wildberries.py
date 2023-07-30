@@ -10,6 +10,7 @@ from selenium.webdriver.firefox.options import Options
 import time
 import sqlite3
 import os
+import json
 
 
 class WildberriesParser:
@@ -70,28 +71,12 @@ class WildberriesParser:
         
         return all_urls
 
-    def parse_other_url(self):
+    def parse_by_selenium(self):
         print("Начинаю парсить каждую отдельную ссылку.")
-
-        if not os.path.exists("database.db"):
-            con = sqlite3.connect("database.db")
-            cur = con.cursor()
-            cur.execute("""
-CREATE TABLE wb_database(
-product_name varchar(80), 
-current_price float,
-description text, 
-url varchar(50))
-previous_price float null, 
-difference float null,"""
-)
-        else:
-            con = sqlite3.connect("database.db")
-            cur = con.cursor()
 
         all_datas = []
         counter = 0
-        with open("all_urls.txt", "r") as urls_list:
+        with open("/home/nexia/Документы/Wildberries_parser/wb_parser/all_urls.txt", "r") as urls_list:
             for url in urls_list:
                 driver = webdriver.Firefox()
                 driver.minimize_window()
@@ -110,35 +95,6 @@ difference float null,"""
                     except:
                         time.sleep(1)
 
-                database = cur.execute("""SELECT product_name FROM wb_database""")
-                if len(database.fetchall()) == 0:
-                    print("1 заполнение")
-                    cur.execute(
-                        f"""
-INSERT INTO wb_database 
-VALUES(
-{product_name},
-{price},
-{description},
-{url}
-)
-"""
-                    )
-                else:
-                    print("2 заполнение")
-                    cur.execute(
-                        f"""
-UPDATE wb_database
-SET
-product_name = {product_name},
-current_price = {price},
-description = {description},
-url = {url}
-previous_price = {previous_price}
-"""
-                    )
-                    previous_price = current_data
-
                 current_data = {
                         "product_name": product_name,
                         "price": price,
@@ -146,10 +102,63 @@ previous_price = {previous_price}
                         "url": url
                             }
                 all_datas.append(current_data)
-                
                 counter += 1
-                print(f"{counter}")
-    
+                print(counter)
+
+            with open("/home/nexia/Документы/Wildberries_parser/data_from_urls.json", "w") as json_file:
+                json.dump(all_datas, json_file, indent=4, ensure_ascii=False)
+
+    @staticmethod
+    def int_price(price):
+        price_list = list(price)
+
+        total_data = []
+        for number in price_list:
+            if number.isdigit():
+                total_data.append(number)
+        return int("".join(total_data))
+
+    def parse_by_bs4(self):
+        print("Начинаю парсить каждую ссылку.")
+
+        counter = 1
+        total_data = []
+        with open("/home/nexia/Документы/Wildberries_parser/wb_parser/all_urls.txt", "r") as urls_list:
+            for url in urls_list:
+                opt = Options()
+                opt.add_argument('--headless')
+                driver =  webdriver.Firefox(options=opt)
+                driver.get(url)
+                time.sleep(3)
+                html_source = driver.page_source
+                driver.close()
+
+                soup = BeautifulSoup(html_source, "lxml")
+                for tryeing in range(10):
+                    try:
+                        product_name = soup.find("div", class_="product-page__header").find("h1").text
+                        current_price = soup.find("ins", class_="price-block__final-price").text
+                        description = soup.find("p", class_="collapsable__text").text
+                        break
+                    except:
+                        time.sleep(1)
+
+                current_data = (
+                    {
+                        "product_name": product_name,
+                        "current_price": self.int_price(current_price),
+                        "description": description,
+                        "url": url
+                    }
+                )
+                total_data.append(current_data)
+                print(f"Парсинг {counter}-го элемента.")
+                counter += 1
+
+        with open("/home/nexia/Документы/Wildberries_parser/data_from_urls.json", "w", encoding="utf-8") as json_file:
+            print("Записываю в .json файл.")
+            json.dump(total_data, json_file, ensure_ascii=False, indent=4)
+
 
 wb = WildberriesParser("Женская одежда")
-wb.parse_other_url()
+wb.parse_by_bs4()
