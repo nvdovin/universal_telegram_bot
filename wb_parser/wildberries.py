@@ -148,7 +148,7 @@ class WildberriesParser:
                         "product_name": product_name,
                         "current_price": self.int_price(current_price),
                         "description": description,
-                        "url": url
+                        "url": url.strip()
                     }
                 )
                 total_data.append(current_data)
@@ -159,6 +159,65 @@ class WildberriesParser:
             print("Записываю в .json файл.")
             json.dump(total_data, json_file, ensure_ascii=False, indent=4)
 
+    def create_databese(self):
+        con = sqlite3.connect("database.db")
+        cur = con.cursor()
+        
+
+        cur.execute(f"""--sql
+                    CREATE TABLE IF NOT EXISTS wildberries(
+                        product_name varchar(30),
+                        current_price float,
+                        previously_price float NULL,
+                        descr text,
+                        url_link varchar(50)
+                    )""")
+        con.commit()
+        
+        print("База данных инициализированна.")
+        with open("data_from_urls.json", "r") as json_file:
+            print("Зполнение базы данных.")
+            json_data = json.load(json_file)
+            for item in json_data:
+                # print(item)
+                product_name = item["product_name"]
+                current_price = item["current_price"]
+                descr = item["description"]
+                url_link = item["url"]
+
+
+                select_all = cur.execute(f"""--sql
+                                        SELECT product_name FROM wildberries""")
+                # print(select_all.fetchall())
+                if len(select_all.fetchall()) < 1:
+                    print("Заполнение пустой БД.")
+                    cur.execute(f"""--sql
+                                INSERT INTO wildberries(
+                                product_name,
+                                current_price,
+                                descr,
+                                url_link
+                                )
+                                VALUES(
+                                    '{product_name}',
+                                    {current_price},
+                                    '{descr}',
+                                    '{url_link}'
+                                );
+                                """)
+                    con.commit()
+                else:
+                    print("Обновление БД.")
+                    cur.execute(f"""--sql
+                                UPDATE wildberries
+                                SET
+                                    previously_price=current_price,
+                                    current_price={current_price}
+                                """)
+                    con.commit()
+                    previously_price = current_price
+        
+        cur.close()
 
 wb = WildberriesParser("Женская одежда")
-wb.parse_by_bs4()
+wb.create_databese()
