@@ -5,7 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.chrome.options import Options
 
 import time
 import sqlite3
@@ -20,9 +20,9 @@ class WildberriesParser:
     def get_html_sourse(self):
         """ This part needs for getting html sourse """
 
-        options = webdriver.FirefoxOptions()
-        options.add_argument("headless")
-        driver = webdriver.Firefox(options)
+        options = webdriver.ChromeOptions()
+        options.add_argument("--headless")
+        driver = webdriver.Chrome(options)
         driver.get("https://www.wildberries.ru/")
 
         time.sleep(5)
@@ -78,7 +78,7 @@ class WildberriesParser:
         counter = 0
         with open("/home/nexia/Документы/Wildberries_parser/wb_parser/all_urls.txt", "r") as urls_list:
             for url in urls_list:
-                driver = webdriver.Firefox()
+                driver = webdriver.Chrome()
                 driver.minimize_window()
                 driver.get(url)
 
@@ -118,46 +118,87 @@ class WildberriesParser:
                 total_data.append(number)
         return int("".join(total_data))
 
-    def parse_by_bs4(self):
-        print("Начинаю парсить каждую ссылку.")
+    def parse_and_save(self, url):
+        print("Начинаю парсить ссылку.")
 
-        counter = 1
-        total_data = []
-        with open("/home/nexia/Документы/Wildberries_parser/wb_parser/all_urls.txt", "r") as urls_list:
+        opt = Options()
+        opt.add_argument('--headless')
+        driver =  webdriver.Chrome(options=opt)
+        driver.get(url)
+        time.sleep(3)
+        html_source = driver.page_source
+        driver.close()
+
+        soup = BeautifulSoup(html_source, "lxml")
+        for tryeing in range(10):
+            try:
+                product_name = soup.find("div", class_="product-page__header").find("h1").text
+                current_price = soup.find("ins", class_="price-block__final-price").text
+                current_price = self.int_price(current_price)
+                description = soup.find("p", class_="collapsable__text").text
+                url = url.strip()
+                break
+            except:
+                time.sleep(1)
+
+        con = sqlite3.connect("database.db")
+        cur = con.cursor()
+
+        cur.execute("""--sql
+        CREATE TABLE IF NOT EXISTS wildberries(
+                        product_name varchar(30),
+                        current_price float,
+                        previously_price float NULL,
+                        descr text,
+                        url_link varchar(50)
+                    )
+        """)
+        
+        already_uses = cur.execute(f"""--sql 
+        SELECT url_link FROM wildberries
+        """)
+
+        already_uses = str(already_uses.fetchall()).replace("'", "").replace("(", "").replace(",),", "").replace("[", "").replace("]", "").replace(",)", "")
+        if url in already_uses.split():
+            
+            print("Обновление БД.")
+            cur.execute(f"""--sql
+                        UPDATE wildberries
+                        SET
+                        previously_price=current_price,
+                        current_price={current_price}
+                        WHERE url_link='{url}'
+                        """)
+            con.commit()
+        else:
+            print("Заполнение недостающих товаров.")
+            cur.execute(f"""--sql
+                        INSERT INTO wildberries(
+                        product_name,
+                        current_price,
+                        descr,
+                        url_link
+                        )
+                        VALUES(
+                        '{product_name}',
+                        {current_price},
+                        '{description}',
+                        '{url}'
+                        );
+                        """)
+            con.commit()
+
+    def pull_urls_to_function(self, count: int):
+        counter = 0
+        with open("wb_parser/all_urls.txt", "r") as urls_list:
             for url in urls_list:
-                opt = Options()
-                opt.add_argument('--headless')
-                driver =  webdriver.Firefox(options=opt)
-                driver.get(url)
-                time.sleep(3)
-                html_source = driver.page_source
-                driver.close()
-
-                soup = BeautifulSoup(html_source, "lxml")
-                for tryeing in range(10):
-                    try:
-                        product_name = soup.find("div", class_="product-page__header").find("h1").text
-                        current_price = soup.find("ins", class_="price-block__final-price").text
-                        description = soup.find("p", class_="collapsable__text").text
-                        break
-                    except:
-                        time.sleep(1)
-
-                current_data = (
-                    {
-                        "product_name": product_name,
-                        "current_price": self.int_price(current_price),
-                        "description": description,
-                        "url": url.strip()
-                    }
-                )
-                total_data.append(current_data)
-                print(f"Парсинг {counter}-го элемента.")
+                self.parse_and_save(url)
+                print(f"{counter}/{count}")
                 counter += 1
 
-        with open("/home/nexia/Документы/Wildberries_parser/data_from_urls.json", "w", encoding="utf-8") as json_file:
-            print("Записываю в .json файл.")
-            json.dump(total_data, json_file, ensure_ascii=False, indent=4)
+                if counter > count:
+                    print("Стоп. Лимит достигнут.")
+                    break
 
     def create_databese(self):
         con = sqlite3.connect("database.db")
@@ -205,7 +246,6 @@ class WildberriesParser:
                                     '{url_link}'
                                 );
                                 """)
-                    con.commit()
                 else:
                     print("Обновление БД.")
                     cur.execute(f"""--sql
@@ -214,10 +254,9 @@ class WildberriesParser:
                                     previously_price=current_price,
                                     current_price={current_price}
                                 """)
-                    con.commit()
                     previously_price = current_price
         
-        cur.close()
+        con.commit()
 
 wb = WildberriesParser("Женская одежда")
-wb.create_databese()
+wb.pull_urls_to_function(7)
