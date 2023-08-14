@@ -10,7 +10,6 @@ from threading import Thread
 
 import time
 import sqlite3
-import json
 
 
 complited_threads = 0
@@ -21,7 +20,7 @@ class WildberriesParser:
         self.request = request
 
     def get_html_sourse(self):
-        """ This part needs for getting html sourse """
+        """ Здесь создаётся готовая, прогруженная html странца с исходным кодом. """
 
         options = webdriver.ChromeOptions()
         options.add_argument("--headless")
@@ -56,7 +55,7 @@ class WildberriesParser:
         return html_code
         
     def parse_prepared_page(self):
-        """ Here we're parse our prepaired source """
+        """ В этой функции готовая прогруженная страница разбирется на ссылки, составляющие эту самую страницу """
 
         soup = BeautifulSoup(self.get_html_sourse())
         all_items = soup.find_all("article", class_="product-card")
@@ -74,45 +73,10 @@ class WildberriesParser:
         
         return all_urls
 
-    def parse_by_selenium(self):
-        print("Начинаю парсить каждую отдельную ссылку.")
-
-        all_datas = []
-        counter = 0
-        with open("/home/nexia/Документы/Wildberries_parser/wb_parser/all_urls.txt", "r") as urls_list:
-            for url in urls_list:
-                driver = webdriver.Chrome()
-                driver.minimize_window()
-                driver.get(url)
-
-                previous_price = 0
-
-                for n in range(10):
-                    try:
-                        product_name = driver.find_element(By.XPATH, "/html/body/div[1]/main/div[2]/div/div[3]/div/div[3]/div[5]/div[1]/h1").text
-                        price_in_list = driver.find_element(By.CLASS_NAME, "price-block__final-price").text
-                        price = int("".join(price_in_list.split()[:-1]))
-                        description = driver.find_element(By.XPATH, "/html/body/div[1]/main/div[2]/div/div[3]/div/div[3]/section/div[2]/section[1]/div[2]/div[1]/p").text
-                        driver.close()
-                        break
-                    except:
-                        time.sleep(1)
-
-                current_data = {
-                        "product_name": product_name,
-                        "price": price,
-                        "description": description,
-                        "url": url
-                            }
-                all_datas.append(current_data)
-                counter += 1
-                print(counter)
-
-            with open("/home/nexia/Документы/Wildberries_parser/data_from_urls.json", "w") as json_file:
-                json.dump(all_datas, json_file, indent=4, ensure_ascii=False)
-
     @staticmethod
     def int_price(price):
+        """ Функция позволяет превратить строковое обозначение цены в число """
+
         price_list = list(price)
 
         total_data = []
@@ -122,6 +86,8 @@ class WildberriesParser:
         return int("".join(total_data))
 
     def parse_and_save(self, url):
+        """ Здесь алгоритм переходит по каждой из ссылок и парсит необходимые данные прямо в БД """
+
         global complited_threads
         print("Начинаю парсить ссылку.")
 
@@ -153,7 +119,7 @@ class WildberriesParser:
                         product_name varchar(30),
                         current_price float,
                         previously_price float NULL,
-                        descr text,
+                        descr varchar(100),
                         url_link varchar(50)
                     )
         """)
@@ -200,6 +166,8 @@ class WildberriesParser:
         return all_urls
 
     def pull_urls_to_function(self):
+        """ Здесь формируются несколько потоков для парсинга url """
+
         all_urls = self.make_urls_list()
         current_thread = 0
         global complited_threads
@@ -212,58 +180,35 @@ class WildberriesParser:
                 else:
                     time.sleep(1)
 
-    def create_databese(self):
-        con = sqlite3.connect("database.db")
-        cur = con.cursor()
 
-        cur.execute(f"""--sql
-                    CREATE TABLE IF NOT EXISTS wildberries(
-                        product_name varchar(30),
-                        current_price float,
-                        previously_price float NULL,
-                        descr text,
-                        url_link varchar(50)
-                    )""")
-        con.commit()
-        
-        print("База данных инициализированна.")
-        with open("data_from_urls.json", "r") as json_file:
-            print("Зполнение базы данных.")
-            json_data = json.load(json_file)
-            for item in json_data:
-                product_name = item["product_name"]
-                current_price = item["current_price"]
-                descr = item["description"]
-                url_link = item["url"]
+print("""
+[+] Чтобы сформировать новый поисковой запрос: 
+search
+          
+[+] Просмотреть список запросов:
+requests
+          
+[+] Чтобы обновить существующую БД:
+watch
 
-                select_all = cur.execute(f"""--sql
-                                        SELECT product_name FROM wildberries""")
-                if len(select_all.fetchall()) < 1:
-                    print("Заполнение пустой БД.")
-                    cur.execute(f"""--sql
-                                INSERT INTO wildberries(
-                                product_name,
-                                current_price,
-                                descr,
-                                url_link
-                                )
-                                VALUES(
-                                    '{product_name}',
-                                    {current_price},
-                                    '{descr}',
-                                    '{url_link}'
-                                );
-                                """)
-                else:
-                    print("Обновление БД.")
-                    cur.execute(f"""--sql
-                                UPDATE wildberries
-                                SET
-                                    previously_price=current_price,
-                                    current_price={current_price}
-                                """)
-        
-        con.commit()
+[+] Для выхода:
+exit""")
+while True:
+    command = input("Введите команду: ")
+    match command:
+        case "search":
+            req = input("Ваш запрос: \n")
+            wb = WildberriesParser(req)
+            wb.parse_prepared_page()
+            wb.pull_urls_to_function()
+            
 
-wb = WildberriesParser("Женская одежда")
-wb.pull_urls_to_function()
+        case "request":
+            pass
+
+        case "watch":
+            pass
+
+        case "exit":
+            print("До новых встреч!")
+            break
