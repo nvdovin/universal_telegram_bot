@@ -6,6 +6,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.options import Options
+from threading import Thread
 
 import time
 import sqlite3
@@ -187,23 +188,18 @@ class WildberriesParser:
                         );
                         """)
             con.commit()
+            return 1
 
-    def pull_urls_to_function(self, count: int):
+    def pull_urls_to_function(self):
         counter = 0
         with open("wb_parser/all_urls.txt", "r") as urls_list:
             for url in urls_list:
-                self.parse_and_save(url)
-                print(f"{counter}/{count}")
-                counter += 1
-
-                if counter > count:
-                    print("Стоп. Лимит достигнут.")
-                    break
+                counter = Thread(target=self.parse_and_save(url), args=[], daemon=True).is_alive()
+                print(counter)
 
     def create_databese(self):
         con = sqlite3.connect("database.db")
         cur = con.cursor()
-        
 
         cur.execute(f"""--sql
                     CREATE TABLE IF NOT EXISTS wildberries(
@@ -220,7 +216,6 @@ class WildberriesParser:
             print("Зполнение базы данных.")
             json_data = json.load(json_file)
             for item in json_data:
-                # print(item)
                 product_name = item["product_name"]
                 current_price = item["current_price"]
                 descr = item["description"]
@@ -259,4 +254,4 @@ class WildberriesParser:
         con.commit()
 
 wb = WildberriesParser("Женская одежда")
-wb.pull_urls_to_function(7)
+wb.pull_urls_to_function()
