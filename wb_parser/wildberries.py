@@ -1,15 +1,20 @@
 from bs4 import BeautifulSoup
 
+from transcripter import transcription
+
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from threading import Thread
 
 import time
 import sqlite3
+import os
 
 
 complited_threads = 0
@@ -18,38 +23,37 @@ complited_threads = 0
 class WildberriesParser:
     def __init__(self, request: str) -> None:
         self.request = request
+        self.req_name = transcription(request)
 
     def get_html_sourse(self):
         """ Здесь создаётся готовая, прогруженная html странца с исходным кодом. """
 
+        print("Создаю драйвер для сбора ссылок")
         options = webdriver.ChromeOptions()
         options.add_argument("--headless")
-        driver = webdriver.Chrome(options)
+        driver = webdriver.Chrome()
+        wait = WebDriverWait(driver, 5)
         driver.get("https://www.wildberries.ru/")
 
-        time.sleep(5)
-        search = driver.find_element(By.XPATH, "/html/body/div[1]/header/div/div[2]/div[3]/div[1]/input")
+        print("Ввожу поисковый запрос")
+        search = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/header/div/div[2]/div[3]/div[1]/input")))
+        #search.send_keys(self.request, Keys.ENTER)
+        time.sleep(1)
         search.send_keys(self.request, Keys.ENTER)
-
+               
+        time.sleep(5)
         action = ActionChains(driver=driver)
 
-        cycle = True
-        while cycle:
+        print("Прокручиваю страницу до конца вниз")
+        while True:
             try:
-                page_end = driver.find_element(By.XPATH, "/html/body/div[1]/main/div[2]/div/div[2]/div/div/div[7]/section/div[1]/h2")
-                print(page_end.text)
-                cycle = False
+                driver.find_element(By.XPATH, "/html/body/div[1]/main/div[2]/div/div[2]/div/div/div[7]/section/div[1]/h2")
+                break
             except:
                 action.key_down(Keys.PAGE_DOWN).perform()
                 time.sleep(1)
-        print("Out from cycle.")
-        with open("page_src.html", "w", encoding="utf-8") as html_file:
-            print("Saving to .html file")
-            html_file.write(driver.page_source)
 
         html_code = driver.page_source
-        current_link = driver.current_url
-        print(current_link)
         driver.close()
 
         return html_code
@@ -60,16 +64,19 @@ class WildberriesParser:
         soup = BeautifulSoup(self.get_html_sourse())
         all_items = soup.find_all("article", class_="product-card")
 
-        print(len(all_items))
+        print(f"Удалось собрать {len(all_items)} элементов")
         all_urls = []
         for item in all_items:
             url = item.find("a", class_="product-card__link").get("href")
             all_urls.append(url)
+        
+        if not os.path.exists("urls"):
+            os.mkdir("urls")
 
-        with open("all_urls.txt", "w") as file:
-            print("Производится записть в all_url.txt")
-            for u in all_urls:
-                file.write(f"{u}\n")
+        with open(f"urls/{self.req_name}.txt", "w") as file:
+            print(f"Производится записть в {self.req_name}.txt")
+            for url in all_urls:
+                file.write(f"{url}\n")
         
         return all_urls
 
@@ -111,7 +118,9 @@ class WildberriesParser:
             except:
                 time.sleep(1)
 
-        con = sqlite3.connect("database.db")
+        if not os.path.exists("databases"):
+            os.mkdir("databases")
+        con = sqlite3.connect(f"databases/{self.req_name}.db")
         cur = con.cursor()
 
         cur.execute("""--sql
@@ -160,7 +169,7 @@ class WildberriesParser:
 
     def make_urls_list(self):
         all_urls = []
-        with open("wb_parser/all_urls.txt", "r") as txt_file:
+        with open(f"urls/{self.req_name}.txt", "r") as txt_file:
             for url in txt_file:
                 all_urls.append(url.strip())
         return all_urls
