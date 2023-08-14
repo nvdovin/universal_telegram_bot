@@ -1,4 +1,3 @@
-import requests
 from bs4 import BeautifulSoup
 
 from selenium import webdriver
@@ -6,12 +5,15 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.options import Options
+
 from threading import Thread
 
 import time
 import sqlite3
-import os
 import json
+
+
+complited_threads = 0
 
 
 class WildberriesParser:
@@ -120,6 +122,7 @@ class WildberriesParser:
         return int("".join(total_data))
 
     def parse_and_save(self, url):
+        global complited_threads
         print("Начинаю парсить ссылку.")
 
         opt = Options()
@@ -156,12 +159,11 @@ class WildberriesParser:
         """)
         
         already_uses = cur.execute(f"""--sql 
-        SELECT url_link FROM wildberries
-        """)
+                            SELECT url_link FROM wildberries
+        """)        
 
         already_uses = str(already_uses.fetchall()).replace("'", "").replace("(", "").replace(",),", "").replace("[", "").replace("]", "").replace(",)", "")
         if url in already_uses.split():
-            
             print("Обновление БД.")
             cur.execute(f"""--sql
                         UPDATE wildberries
@@ -188,14 +190,27 @@ class WildberriesParser:
                         );
                         """)
             con.commit()
-            return 1
+        complited_threads += 1
+
+    def make_urls_list(self):
+        all_urls = []
+        with open("wb_parser/all_urls.txt", "r") as txt_file:
+            for url in txt_file:
+                all_urls.append(url.strip())
+        return all_urls
 
     def pull_urls_to_function(self):
-        counter = 0
-        with open("wb_parser/all_urls.txt", "r") as urls_list:
-            for url in urls_list:
-                counter = Thread(target=self.parse_and_save(url), args=[], daemon=True).is_alive()
-                print(counter)
+        all_urls = self.make_urls_list()
+        current_thread = 0
+        global complited_threads
+        for url_line in all_urls:
+            while True:
+                if current_thread - complited_threads < 10:
+                    Thread(target=self.parse_and_save, args=[url_line], daemon=True).start()
+                    current_thread += 1
+                    break
+                else:
+                    time.sleep(1)
 
     def create_databese(self):
         con = sqlite3.connect("database.db")
@@ -221,10 +236,8 @@ class WildberriesParser:
                 descr = item["description"]
                 url_link = item["url"]
 
-
                 select_all = cur.execute(f"""--sql
                                         SELECT product_name FROM wildberries""")
-                # print(select_all.fetchall())
                 if len(select_all.fetchall()) < 1:
                     print("Заполнение пустой БД.")
                     cur.execute(f"""--sql
@@ -249,7 +262,6 @@ class WildberriesParser:
                                     previously_price=current_price,
                                     current_price={current_price}
                                 """)
-                    previously_price = current_price
         
         con.commit()
 
