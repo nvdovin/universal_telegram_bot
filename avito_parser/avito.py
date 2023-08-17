@@ -1,34 +1,49 @@
-import requests
+import time
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 import os
 import json
 
 
 class AvitoParser:
-    def get_html_src(self, url: str):
+    def get_html_src(self, url: str, phone=False):
         print("[INFO] Creating of driver")
         ops = webdriver.ChromeOptions()
-        ops.add_argument("--headless")
+        # ops.add_argument("--headless")
         ops.add_argument("--log-level=3")
         driver = webdriver.Chrome(ops)
 
         print("[INFO] Getting page content")
+        wait = WebDriverWait(driver, 5)
         driver.get(url=url)
 
         html_src = driver.page_source
         with open("index.html", "w", encoding="utf-8") as file_html:
             print("[INFO] Writing to .html file")
             file_html.write(html_src)
-
-        print("[INFO] Success.")
-        return html_src
-
+        
+        if phone is False:
+            print("[INFO] Success.")
+            return html_src, None
+        else:
+            print("[INFO] Advice to parce number")
+            button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="app"]/div/div[3]/div[1]/div/div[2]/div[3]/div[2]/div[1]/div/div/div[2]/div[1]/div/div[2]/div[1]/div/div/div/div/button')))
+            button.click()
+            
+            for i in range(10):
+                try:
+                    phone_number = driver.find_element(By.XPATH, '/html/body/div[2]/div[63]/div/div/div/div[1]/div[2]/img').text
+                    print(phone_number)
+                    return html_src, phone_number
+                except:
+                    time.sleep(1)
 
     def getting_urls(self) -> None:
         with open("index.html", "r", encoding="utf-8") as html_src:
@@ -60,20 +75,21 @@ class AvitoParser:
         return float(main_num)
 
     def parse_every_url(self, url: str):
-        # req = get_html_src(url=url)
+        req, number = self.get_html_src(url=url, phone=True)
         # test case
-        with open("index.html", "r", encoding="utf-8") as file_:
-            s = file_.read()
+        # with open("index.html", "r", encoding="utf-8") as file_:
+        #     s = file_.read()
 
-            soup = BeautifulSoup(s, "lxml")
+        soup = BeautifulSoup(req, "lxml")
 
-            title = soup.find("span", class_="title-info-title-text").text
-            price = self.str_to_num(soup.find("span", class_="style-price-value-main-TIg6u").text)
-            image = soup.find("div", class_="image-frame-wrapper-_NvbY").find("img").get("src")
-            adress = soup.find("span", class_="style-item-address__string-wt61A").text
-            description = soup.find("div", class_="style-item-description-html-qCwUL").text.strip("\n\n")
+        title = soup.find("span", class_="title-info-title-text").text
+        price = self.str_to_num(soup.find("span", class_="style-price-value-main-TIg6u").text)
+        image = soup.find("div", class_="image-frame-wrapper-_NvbY").find("img").get("src")
+        adress = soup.find("span", class_="style-item-address__string-wt61A").text
+        description = soup.find("div", class_="style-item-description-html-qCwUL").text.strip("\n\n")
+        phone_number = number
 
-            print(description)
+        print(phone_number)
 
 
 if __name__ == "__main__":
