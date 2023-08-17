@@ -71,8 +71,9 @@ class AvitoParser:
             price = self.str_to_num(soup.find("span", class_="style-price-value-main-TIg6u").text)
             image = soup.find("div", class_="image-frame-wrapper-_NvbY").find("img").get("src")
             adress = soup.find("span", class_="style-item-address__string-wt61A").text
+            description = soup.find("div", class_="style-item-description-html-qCwUL").text.strip("\n\n")
 
-            print(adress)
+            print(description)
 
 
 if __name__ == "__main__":
