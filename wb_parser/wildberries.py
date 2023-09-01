@@ -21,9 +21,10 @@ complited_threads = 0
 
 
 class WildberriesParser:
-    def __init__(self, request: str) -> None:
+    def __init__(self, request: str, user_id=0) -> None:
         self.request = request
         self.req_name = transcription(request)
+        self.con = f"wb_parser/databases/User_{user_id}.db"
 
 
     def get_html_sourse(self):
@@ -32,18 +33,17 @@ class WildberriesParser:
         print("Создаю драйвер для сбора ссылок")
         opt = Options()
         opt.add_argument("--log-level=3")
+        opt.add_argument("--headless=new")
         opt.page_load_strategy = 'eager'
         opt.add_argument("--disable-blink-features=AutomationControlled")
         opt.add_experimental_option('excludeSwitches', ['enable-logging'])
         driver =  webdriver.Chrome(options=opt)
         driver.minimize_window()
-        opt.headless = True
         wait = WebDriverWait(driver, 5)
         driver.get("https://www.wildberries.ru/")
 
         print("Ввожу поисковый запрос")
         search = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/header/div/div[2]/div[3]/div[1]/input")))
-        #search.send_keys(self.request, Keys.ENTER)
         time.sleep(1)
         search.send_keys(self.request, Keys.ENTER)
 
@@ -68,7 +68,7 @@ class WildberriesParser:
     def parse_prepared_page(self):
         """ В этой функции готовая прогруженная страница разбирется на ссылки, составляющие эту самую страницу """
 
-        soup = BeautifulSoup(self.get_html_sourse())
+        soup = BeautifulSoup(self.get_html_sourse(), "lxml")
         all_items = soup.find_all("article", class_="product-card")
 
         print(f"Удалось собрать {len(all_items)} элементов")
@@ -134,11 +134,11 @@ class WildberriesParser:
         if not os.path.exists("wb_parser/databases"):
             os.mkdir("wb_parser/databases")
 
-        con = sqlite3.connect(f"wb_parser/databases/{self.req_name}.db")
+        con = sqlite3.connect(self.con)
         cur = con.cursor()
 
-        cur.execute("""--sql
-        CREATE TABLE IF NOT EXISTS wildberries(
+        cur.execute(f"""--sql
+        CREATE TABLE IF NOT EXISTS {self.req_name}(
                         product_name varchar(30),
                         current_price float,
                         previously_price float NULL,
@@ -148,14 +148,14 @@ class WildberriesParser:
         """)
         
         already_uses = cur.execute(f"""--sql 
-                            SELECT url_link FROM wildberries
+                            SELECT url_link FROM {self.req_name}
         """)        
 
         already_uses = str(already_uses.fetchall()).replace("'", "").replace("(", "").replace(",),", "").replace("[", "").replace("]", "").replace(",)", "")
         if url in already_uses.split():
             print("Обновление БД.")
             cur.execute(f"""--sql
-                        UPDATE wildberries
+                        UPDATE {self.req_name}
                         SET
                         previously_price=current_price,
                         current_price={current_price}
@@ -165,7 +165,7 @@ class WildberriesParser:
         else:
             print("Заполнение недостающих товаров.")
             cur.execute(f"""--sql
-                        INSERT INTO wildberries(
+                        INSERT INTO {self.req_name}(
                         product_name,
                         current_price,
                         descr,
@@ -188,6 +188,67 @@ class WildberriesParser:
             for url in txt_file:
                 all_urls.append(url.strip())
         return all_urls
+    
+
+    @staticmethod
+    def check_slice(slice_part, max_len: int) -> bool:
+        try:
+            slice_part = int(slice_part)
+            if slice_part >=0 and slice_part <= max_len:
+                return True
+        except:
+            if slice_part == '':
+                return True
+            else:
+                return False
+
+
+    def show_database(self):
+        con = sqlite3.connect(self.con)
+        cur = con.cursor()
+        tables_list_fron_db = cur.execute(f"""--sql
+                                SELECT name FROM sqlite_master WHERE type='table';
+                                    """).fetchall()
+
+        table = cur.execute(f"""--sql
+                            SELECT product_name,
+                            current_price,
+                            previously_price, 
+                            url_link,
+                            current_price-previously_price AS difference
+                            FROM {self.req_name}
+                            ORDER BY current_price
+                            """)
+        list_table = table.fetchall()
+        len_of_table = len(list_table) - 1
+
+        print(f"Всего в таблице {len_of_table} элементов\n")
+        slice_list = input("Введите, какой срез хотите получить в формате 'int:int': ").split(":")
+        
+        while True:
+            if self.check_slice(slice_list[0], len_of_table) and self.check_slice(slice_list[1], len_of_table):
+                if slice_list[0].isdigit() and slice_list[1].isdigit():
+                    slice_list[0], slice_list[1] = int(slice_list[0]), int(slice_list[1])
+                    for n in range(slice_list[0], slice_list[1]-1):
+                        print(list_table[n])
+                
+                elif slice_list[0] == '' and slice_list[1].isdigit():
+                    slice_list[1] = int(slice_list[1])
+                    for n in range(slice_list[1]-1):
+                        print(list_table[n])
+                
+                elif slice_list[0].isdigit() and slice_list[1] == '':
+                    slice_list[0] = int(slice_list[0])
+                    for n in range(slice_list[0], len_of_table):
+                        print(list_table[n])
+                
+                else:
+                    for n in range(len_of_table):
+                        print(list_table[n])
+                break
+            
+            else:
+                slice_list = input("Введите, какой срез хотите получить в формате 'int:int'").split(":")
 
 
     def start_threads(self):
@@ -200,55 +261,87 @@ class WildberriesParser:
         for url_line in all_urls:
             while True:
                 if current_thread - complited_threads < 10:
-                    Thread(target=self.parse_and_save, args=[url_line, "refresh"], daemon=True).start()
+                    Thread(target=self.parse_and_save, args=[url_line], daemon=True).start()
                     current_thread += 1
                     break
                 else:
                     time.sleep(1)
 
 
+def act_with_ready_db(act_type="refresh", user_id=0):
+    """Метод для класса, позволяющий проводить работу над уже готовой базой данных. 
+    В функционал входят обновление и просмотр
 
-print("""
-[+] Чтобы сформировать новый поисковой запрос: search
+    Аргументы:
+        act_type (str, optional): Данная переменная отвечает за тип действия с таблицей. По умолчанию "refresh" - обновить данные
+    """
+    con = sqlite3.connect(f"wb_parser/databases/User_{user_id}.db")
+    cur = con.cursor()
+    tables_list_fron_db = cur.execute(f"""--sql 
+                                    SELECT name FROM sqlite_master WHERE type='table';
+                                """).fetchall()
 
-[+] Чтобы обновить существующую БД: refresh
+    print(f"Выбрана база данных вашего пользователя. ")
 
-[+] Для выхода: exit
-""")
+    for n in range(len(tables_list_fron_db)-1):
+        table_name = tables_list_fron_db[n][0]
+        print(f"{n}. {table_name}")
+    
+    table_number = input("Какую базу данных исследовать?: ")
+    tables_len = len(tables_list_fron_db)-1
+    while True:
+        if table_number.isdigit():
+            table_number = int(table_number)
+            if table_number >=0 and table_number <= tables_len:
+                break
+        else:
+            table_number = input("Какую базу данных исследовать?: ")
 
-while True:
-    command = input("\nВведите команду: ")
-    match command:
-        case "search":
-            req = input("\nВаш запрос: ")
-            search_wb_parser = WildberriesParser(req)
-            search_wb_parser.parse_prepared_page()
-            search_wb_parser.start_threads()
-
+    wb_parser = WildberriesParser(tables_list_fron_db[table_number][0])
+    
+    match act_type:
         case "refresh":
-            databases = os.listdir("wb_parser/databases")
-            len_of_databases = len(databases) - 1
+            wb_parser.start_threads()
 
-            i = 0
-            for db in databases:
-                print(f"{i}. {db}")
-                i += 1
-            
-            chosen_db = input("\nВыберите, какую базу данных исследовать: ")
-            flag = True
-            while flag:
-                int_db = int(chosen_db)
-                if 0 <= int_db and int_db <= len_of_databases:
-                    db_name = databases[int_db].split(".")[0]
-                    print(db_name)
+        case "watch":
+            wb_parser.show_database()
 
-                    refresh_wb_parser = WildberriesParser(f"{db_name}")
-                    refresh_wb_parser.start_threads()
 
-                    flag = False
-                else:
-                    chosen_db = int(input("Попробуйте еще раз!: "))
+def main(user_id=0):
+    print("Приветствую! \n")
+    commands = """[+] Чтобы сформировать новый поисковой запрос: search
+[+] Чтобы обновить существующую БД: refresh
+[+] Список команд: help
+[+] Просмотреть базу данных: watch
+[+] Для выхода: exit
+    """
 
-        case "exit":
-            print("До новых встреч!")
-            break
+    print(commands)
+
+    while True:
+        command = input("\nВведите команду: ")
+        match command:
+            case "search":
+                req = input("\nВаш запрос: ")
+                search_wb_parser = WildberriesParser(req)
+                search_wb_parser.parse_prepared_page()
+                search_wb_parser.start_threads()
+                print("\nНажмите Enter \n ")
+
+            case "refresh":
+                act_with_ready_db(act_type="refresh")
+
+            case "exit":
+                print("До новых встреч!")
+                break
+
+            case "help":
+                print(f"\n{command}\n")
+
+            case "watch":
+                act_with_ready_db(act_type="watch", user_id=user_id)
+
+
+if __name__ == "__main__":
+    os.system("cls")
+    main()
