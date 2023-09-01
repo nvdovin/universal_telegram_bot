@@ -25,6 +25,7 @@ class WildberriesParser:
         self.request = request
         self.req_name = transcription(request)
         self.con = f"wb_parser/databases/User_{user_id}.db"
+        self.user_id = user_id
 
 
     def get_html_sourse(self):
@@ -70,6 +71,7 @@ class WildberriesParser:
 
         soup = BeautifulSoup(self.get_html_sourse(), "lxml")
         all_items = soup.find_all("article", class_="product-card")
+        txt_files_path = f"wb_parser/urls/User_{self.user_id}"
 
         print(f"Удалось собрать {len(all_items)} элементов")
         all_urls = []
@@ -77,10 +79,11 @@ class WildberriesParser:
             url = item.find("a", class_="product-card__link").get("href")
             all_urls.append(url)
         
-        if not os.path.exists("wb_parser/urls"):
-            os.mkdir("wb_parser/urls")
+        if not os.path.exists(txt_files_path):
+            os.mkdir(f"wb_parser/urls")
+            os.mkdir(f"wb_parser/urls/User_{self.user_id}")
 
-        with open(f"wb_parser/urls/{self.req_name}.txt", "w") as file:
+        with open(f"{txt_files_path}/{self.req_name}.txt", "w") as file:
             print(f"Производится записть в {self.req_name}.txt")
             for url in all_urls:
                 file.write(f"{url}\n")
@@ -184,7 +187,7 @@ class WildberriesParser:
 
     def make_urls_list(self):
         all_urls = []
-        with open(f"wb_parser/urls/{self.req_name}.txt", "r") as txt_file:
+        with open(f"wb_parser/urls/User_{self.user_id}/{self.req_name}.txt", "r") as txt_file:
             for url in txt_file:
                 all_urls.append(url.strip())
         return all_urls
@@ -206,9 +209,6 @@ class WildberriesParser:
     def show_database(self):
         con = sqlite3.connect(self.con)
         cur = con.cursor()
-        tables_list_fron_db = cur.execute(f"""--sql
-                                SELECT name FROM sqlite_master WHERE type='table';
-                                    """).fetchall()
 
         table = cur.execute(f"""--sql
                             SELECT product_name,
@@ -223,32 +223,43 @@ class WildberriesParser:
         len_of_table = len(list_table) - 1
 
         print(f"Всего в таблице {len_of_table} элементов\n")
-        slice_list = input("Введите, какой срез хотите получить в формате 'int:int': ").split(":")
         
         while True:
-            if self.check_slice(slice_list[0], len_of_table) and self.check_slice(slice_list[1], len_of_table):
-                if slice_list[0].isdigit() and slice_list[1].isdigit():
-                    slice_list[0], slice_list[1] = int(slice_list[0]), int(slice_list[1])
-                    for n in range(slice_list[0], slice_list[1]-1):
-                        print(list_table[n])
+            slice_ = input("Введите, какой срез хотите получить в формате 'int:int': ")
+            
+            try:
+                slice_list = slice_.split(":")
+                if self.check_slice(slice_list[0], len_of_table) and self.check_slice(slice_list[1], len_of_table):
+                    if slice_list[0].isdigit() and slice_list[1].isdigit():
+                        slice_list[0], slice_list[1] = int(slice_list[0]), int(slice_list[1])
+                        for n in range(slice_list[0], slice_list[1]-1):
+                            print(list_table[n])
+                    
+                    elif slice_list[0] == '' and slice_list[1].isdigit():
+                        slice_list[1] = int(slice_list[1])
+                        for n in range(slice_list[1]-1):
+                            print(list_table[n])
+                    
+                    elif slice_list[0].isdigit() and slice_list[1] == '':
+                        slice_list[0] = int(slice_list[0])
+                        for n in range(slice_list[0], len_of_table):
+                            print(list_table[n])
+                    
+                    else:
+                        for n in range(len_of_table):
+                            print(list_table[n])
+                    break
                 
-                elif slice_list[0] == '' and slice_list[1].isdigit():
-                    slice_list[1] = int(slice_list[1])
-                    for n in range(slice_list[1]-1):
-                        print(list_table[n])
-                
-                elif slice_list[0].isdigit() and slice_list[1] == '':
-                    slice_list[0] = int(slice_list[0])
-                    for n in range(slice_list[0], len_of_table):
-                        print(list_table[n])
-                
-                else:
+            except:
+                if slice_ == "":
                     for n in range(len_of_table):
                         print(list_table[n])
-                break
+                    break
+
+
             
-            else:
-                slice_list = input("Введите, какой срез хотите получить в формате 'int:int'").split(":")
+            # else:
+            #     slice_list = input("Введите, какой срез хотите получить в формате 'int:int'").split(":")
 
 
     def start_threads(self):
@@ -283,11 +294,11 @@ def act_with_ready_db(act_type="refresh", user_id=0):
 
     print(f"Выбрана база данных вашего пользователя. ")
 
-    for n in range(len(tables_list_fron_db)-1):
+    for n in range(len(tables_list_fron_db)):
         table_name = tables_list_fron_db[n][0]
         print(f"{n}. {table_name}")
     
-    table_number = input("Какую базу данных исследовать?: ")
+    table_number = str(input("Какую базу данных исследовать?: "))
     tables_len = len(tables_list_fron_db)-1
     while True:
         if table_number.isdigit():
@@ -314,6 +325,7 @@ def main(user_id=0):
 [+] Список команд: help
 [+] Просмотреть базу данных: watch
 [+] Для выхода: exit
+[+] Для очистки экрана: cls
     """
 
     print(commands)
@@ -336,10 +348,13 @@ def main(user_id=0):
                 break
 
             case "help":
-                print(f"\n{command}\n")
+                print(f"\n{commands}\n")
 
             case "watch":
                 act_with_ready_db(act_type="watch", user_id=user_id)
+
+            case "cls":
+                os.system("cls")
 
 
 if __name__ == "__main__":
