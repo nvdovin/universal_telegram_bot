@@ -139,8 +139,9 @@ class WildberriesParser:
         html_source = driver.page_source
         driver.close()
 
+        i = 0
         soup = BeautifulSoup(html_source, "lxml")
-        for tryeing in range(10):
+        while i <= 10:
             try:
                 product_name = soup.find("div", class_="product-page__header").find("h1").text
                 current_price = soup.find("ins", class_="price-block__final-price").text
@@ -150,56 +151,59 @@ class WildberriesParser:
                 break
             except:
                 time.sleep(1)
+                    
+        if i < 10:
+            if not os.path.exists("wb_parser/databases"):
+                os.mkdir("wb_parser/databases")
 
-        if not os.path.exists("wb_parser/databases"):
-            os.mkdir("wb_parser/databases")
+            con = sqlite3.connect(self.con)
+            cur = con.cursor()
 
-        con = sqlite3.connect(self.con)
-        cur = con.cursor()
-
-        cur.execute(f"""--sql
-        CREATE TABLE IF NOT EXISTS {self.req_name}(
-                        product_name varchar(30),
-                        current_price float,
-                        previously_price float NULL,
-                        descr varchar(60),
-                        url_link varchar(50)
-                    )
-        """)
-        
-        already_uses = cur.execute(f"""--sql 
-                            SELECT url_link FROM {self.req_name}
-        """)        
-
-        already_uses = str(already_uses.fetchall()).replace("'", "").replace("(", "").replace(",),", "").replace("[", "").replace("]", "").replace(",)", "")
-        if url in already_uses.split():
-            print("Обновление БД.")
             cur.execute(f"""--sql
-                        UPDATE {self.req_name}
-                        SET
-                        previously_price=current_price,
-                        current_price={current_price}
-                        WHERE url_link='{url}'
-                        """)
-            con.commit()
-        else:
-            print("Заполнение недостающих товаров.")
-            cur.execute(f"""--sql
-                        INSERT INTO {self.req_name}(
-                        product_name,
-                        current_price,
-                        descr,
-                        url_link
+            CREATE TABLE IF NOT EXISTS {self.req_name}(
+                            product_name varchar(30),
+                            current_price float,
+                            previously_price float NULL,
+                            descr varchar(60),
+                            url_link varchar(50)
                         )
-                        VALUES(
-                        '{product_name}',
-                        {current_price},
-                        '{description}',
-                        '{url}'
-                        );
-                        """)
-            con.commit()
-        complited_threads += 1
+            """)
+            
+            already_uses = cur.execute(f"""--sql 
+                                SELECT url_link FROM {self.req_name}
+            """)        
+
+            already_uses = str(already_uses.fetchall()).replace("'", "").replace("(", "").replace(",),", "").replace("[", "").replace("]", "").replace(",)", "")
+            if url in already_uses.split():
+                print("Обновление БД.")
+                cur.execute(f"""--sql
+                            UPDATE {self.req_name}
+                            SET
+                            previously_price=current_price,
+                            current_price={current_price}
+                            WHERE url_link='{url}'
+                            """)
+                con.commit()
+            else:
+                print("Заполнение недостающих товаров.")
+                cur.execute(f"""--sql
+                            INSERT INTO {self.req_name}(
+                            product_name,
+                            current_price,
+                            descr,
+                            url_link
+                            )
+                            VALUES(
+                            '{product_name}',
+                            {current_price},
+                            '{description}',
+                            '{url}'
+                            );
+                            """)
+                con.commit()
+            complited_threads += 1
+        else:
+            pass
 
 
     def make_urls_list(self):
@@ -286,11 +290,6 @@ class WildberriesParser:
                     for n in range(len_of_table):
                         print(list_table[n])
                     break
-
-
-            
-            # else:
-            #     slice_list = input("Введите, какой срез хотите получить в формате 'int:int'").split(":")
 
 
     def start_threads(self):
