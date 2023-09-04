@@ -35,7 +35,7 @@ class WildberriesParser:
         print("Создаю драйвер для сбора ссылок")
         opt = Options()
         opt.add_argument("--log-level=3")
-        # opt.add_argument("--headless=new")
+        opt.add_argument("--headless=new")
         opt.page_load_strategy = 'eager'
         opt.add_argument("--disable-blink-features=AutomationControlled")
         opt.add_experimental_option('excludeSwitches', ['enable-logging'])
@@ -51,6 +51,7 @@ class WildberriesParser:
         time.sleep(5)
         action = ActionChains(driver=driver)
 
+        t = 0
         for page in range(2, self.max_pages):
             print("Прокручиваю страницу до конца вниз")
             while True:
@@ -60,6 +61,9 @@ class WildberriesParser:
                 except:
                     action.key_down(Keys.PAGE_DOWN).perform()
                     time.sleep(1)
+                    t += 1
+                if t > 60:
+                    break
 
             html_code = driver.page_source
 
