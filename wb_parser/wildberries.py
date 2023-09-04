@@ -21,25 +21,25 @@ complited_threads = 0
 
 
 class WildberriesParser:
-    def __init__(self, request: str, user_id=0) -> None:
+    def __init__(self, request: str, user_id=0, max_pages=10) -> None:
         self.request = request
         self.req_name = transcription(request)
         self.con = f"wb_parser/databases/User_{user_id}.db"
         self.user_id = user_id
+        self.max_pages = max_pages
 
 
-    def get_html_sourse(self):
+    def get_full_urls_list(self):
         """ Здесь создаётся готовая, прогруженная html странца с исходным кодом. """
 
         print("Создаю драйвер для сбора ссылок")
         opt = Options()
         opt.add_argument("--log-level=3")
-        opt.add_argument("--headless=new")
+        # opt.add_argument("--headless=new")
         opt.page_load_strategy = 'eager'
         opt.add_argument("--disable-blink-features=AutomationControlled")
         opt.add_experimental_option('excludeSwitches', ['enable-logging'])
         driver =  webdriver.Chrome(options=opt)
-        driver.minimize_window()
         wait = WebDriverWait(driver, 5)
         driver.get("https://www.wildberries.ru/")
 
@@ -51,44 +51,57 @@ class WildberriesParser:
         time.sleep(5)
         action = ActionChains(driver=driver)
 
-        print("Прокручиваю страницу до конца вниз")
-        while True:
+        for page in range(2, self.max_pages):
+            print("Прокручиваю страницу до конца вниз")
+            while True:
+                try:
+                    driver.find_element(By.XPATH, "/html/body/div[1]/main/div[2]/div/div[2]/div/div/div[7]/section/div[1]/h2")
+                    break
+                except:
+                    action.key_down(Keys.PAGE_DOWN).perform()
+                    time.sleep(1)
+
+            html_code = driver.page_source
+
+            # Начало блока записи в тектовый файл
+            soup = BeautifulSoup(html_code, "lxml")
+            all_items = soup.find_all("article", class_="product-card")
+            txt_files_path = f"wb_parser/urls/User_{self.user_id}"
+
+            print(f"На странице {page} yдалось собрать {len(all_items)} элементов.")
+            all_urls = []
+            for item in all_items:
+                url = item.find("a", class_="product-card__link").get("href")
+                all_urls.append(url)
+            
+            if not os.path.exists(txt_files_path):
+                os.mkdir(f"wb_parser/urls")
+                os.mkdir(f"wb_parser/urls/User_{self.user_id}")
+
+
+            if not os.path.isfile(f"{txt_files_path}/{self.req_name}.txt"):
+                with open(f"{txt_files_path}/{self.req_name}.txt", "w") as file:
+                    print(f"Производится записть в {self.req_name}.txt")
+                    for url in all_urls:
+                        file.write(f"{url}\n")
+            else:
+                with open(f"{txt_files_path}/{self.req_name}.txt", "a") as file:
+                    print(f"Производится записть в {self.req_name}.txt")
+                    for url in all_urls:
+                        file.write(f"{url}\n")
+
+            current_url = driver.current_url
             try:
-                driver.find_element(By.XPATH, "/html/body/div[1]/main/div[2]/div/div[2]/div/div/div[7]/section/div[1]/h2")
-                break
+                if "page=" not in current_url:
+                    next_page = f"{current_url.split('?')[0]}?page={page}&{''.join(current_url.split('?')[1:])}"
+                    driver.get(next_page)
+                else:
+                    next_page = current_url.replace(f"page={page-1}", f"page={page}")
+                    driver.get(next_page)
+                print("\nПерехожу к следующей странце.\n")
             except:
-                action.key_down(Keys.PAGE_DOWN).perform()
-                time.sleep(1)
-
-        html_code = driver.page_source
+                break
         driver.close()
-
-        return html_code
-
-
-    def parse_prepared_page(self):
-        """ В этой функции готовая прогруженная страница разбирется на ссылки, составляющие эту самую страницу """
-
-        soup = BeautifulSoup(self.get_html_sourse(), "lxml")
-        all_items = soup.find_all("article", class_="product-card")
-        txt_files_path = f"wb_parser/urls/User_{self.user_id}"
-
-        print(f"Удалось собрать {len(all_items)} элементов")
-        all_urls = []
-        for item in all_items:
-            url = item.find("a", class_="product-card__link").get("href")
-            all_urls.append(url)
-        
-        if not os.path.exists(txt_files_path):
-            os.mkdir(f"wb_parser/urls")
-            os.mkdir(f"wb_parser/urls/User_{self.user_id}")
-
-        with open(f"{txt_files_path}/{self.req_name}.txt", "w") as file:
-            print(f"Производится записть в {self.req_name}.txt")
-            for url in all_urls:
-                file.write(f"{url}\n")
-        
-        return all_urls
 
 
     @staticmethod
@@ -210,15 +223,29 @@ class WildberriesParser:
         con = sqlite3.connect(self.con)
         cur = con.cursor()
 
-        table = cur.execute(f"""--sql
-                            SELECT product_name,
-                            current_price,
-                            previously_price, 
-                            url_link,
-                            current_price-previously_price AS difference
-                            FROM {self.req_name}
-                            ORDER BY current_price
-                            """)
+        show_dif = input("Показать разницу? Enter - да: ")
+        if show_dif != "":
+            table = cur.execute(f"""--sql
+                                SELECT product_name,
+                                current_price,
+                                previously_price, 
+                                url_link,
+                                current_price-previously_price AS difference
+                                FROM {self.req_name}
+                                ORDER BY current_price
+                                """)
+        else:
+            table = cur.execute(f"""--sql
+                                SELECT product_name,
+                                current_price,
+                                previously_price, 
+                                url_link,
+                                current_price-previously_price AS difference
+                                FROM {self.req_name}
+                                WHERE difference <> 0
+                                ORDER BY current_price
+                                """)
+
         list_table = table.fetchall()
         len_of_table = len(list_table) - 1
 
@@ -286,6 +313,9 @@ def act_with_ready_db(act_type="refresh", user_id=0):
     Аргументы:
         act_type (str, optional): Данная переменная отвечает за тип действия с таблицей. По умолчанию "refresh" - обновить данные
     """
+
+    global complited_threads
+
     con = sqlite3.connect(f"wb_parser/databases/User_{user_id}.db")
     cur = con.cursor()
     tables_list_fron_db = cur.execute(f"""--sql 
@@ -309,6 +339,7 @@ def act_with_ready_db(act_type="refresh", user_id=0):
             table_number = input("Какую базу данных исследовать?: ")
 
     wb_parser = WildberriesParser(tables_list_fron_db[table_number][0])
+    complited_threads = 0
     
     match act_type:
         case "refresh":
@@ -336,7 +367,7 @@ def main(user_id=0):
             case "search":
                 req = input("\nВаш запрос: ")
                 search_wb_parser = WildberriesParser(req)
-                search_wb_parser.parse_prepared_page()
+                search_wb_parser.get_full_urls_list()
                 search_wb_parser.start_threads()
                 print("\nНажмите Enter \n ")
 
